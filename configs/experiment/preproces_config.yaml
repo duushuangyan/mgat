@@ -1,1 +1,25 @@
+normalization_method: 'centered_sigmoid'  # 归一化方法
+normalization_scale: 10000.0              # 视场范围
+convert_to_cartesian: true                # 是否转换为笛卡尔坐标
 
+# 位置归一化: x_norm = x/L - 0.5
+position_scale: 10000.0        # L = 10000 (与视场范围一致)
+# v_norm = v / V_scale, V_scale = 2 * max_speed
+max_speed: 280.0               # 最大速度 (m/s)，V_scale = 560
+# 长轴归一化: a_norm = (a - a_center) / a_range
+major_axis_min: 100.0          # 长轴最小值
+major_axis_max: 120.0          # 长轴最大值
+# 自动计算: a_center = 110, a_range = 20
+# 短轴归一化: b_norm = (b - b_center) / b_range
+minor_axis_min: 60.0           # 短轴最小值
+minor_axis_max: 70.0           # 短轴最大值
+
+# 用于CV模型预测消亡目标状态
+delta_t: 1.0
+# 初始时刻噪声配置（t=0，对5D模型状态添加噪声: [x, y, θ, a, b]）
+target_node_init_noise:
+    enabled: True              # 是否启用初始噪声
+    position_std: 0.0         # 位置噪声标准差（归一化尺度 [-0.5, 0.5]）
+    velocity_std: 0.0         # 速度噪声标准差（保留配置项，5D模式下不使用）
+    angle_std: 0.0            # 方向角噪声标准差
+    shape_std: 0.0            # 形状噪声标准差（长短轴共用）
