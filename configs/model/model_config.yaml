@@ -1,1 +1,187 @@
+# 设备配置
+device: auto             # 计算设备: 'auto', 'cpu', 'cuda'
 
+# 日志级别
+log_level: INFO          # 日志级别: 'DEBUG', 'INFO', 'WARNING', 'ERROR'
+
+# 全局嵌入维度 (所有模块共享)
+embed_dim: 256
+
+# ============================================================
+# 编码器模块配置 (NodeEncodingModule)
+# ============================================================
+encoder:
+  # 输入维度
+  meas_dim: 2              # 量测维度 (x, y)
+  target_dim: 5            # 目标状态维度 [x, y, theta, a, b]（不含速度）
+
+  # 量测编码器配置
+  meas_hidden_dim: 128           # 量测编码器隐藏层维度
+  meas_dropout: 0.1              # Dropout概率
+  meas_activation: gelu          # 隐藏层激活: gelu, silu, tanh
+  meas_output_activation: tanh   # 输出激活: none, tanh (tanh约束输出范围)
+  meas_use_residual: true        # 是否使用残差连接
+
+  # 目标编码器配置
+  target_hidden_dim: 128
+  target_dropout: 0.1
+  target_activation: gelu
+  target_output_activation: tanh  # 目标编码器不使用输出激活
+  target_use_residual: true
+
+  # 共享配置
+  norm_type: layer               # 归一化类型: layer, batch
+  init_method: xavier_uniform    # 参数初始化: xavier_uniform, xavier_normal, kaiming_uniform, kaiming_normal
+
+# ============================================================
+# SAM模块配置 (SpatialAttentionModule)
+# ============================================================
+sam:
+  # === 基本配置 ===
+  embed_dim: 256           # 嵌入维度 (必须与encoder输出一致)
+  num_heads: 8             # 注意力头数 (必须能整除embed_dim)
+  num_layers: 2            # HeteroGATLayer层数
+  head_dim: 32             # 每头维度 (可选，默认=embed_dim/num_heads)
+
+  # === Dropout配置 ===
+  dropout: 0.1             # 通用Dropout概率
+  attn_dropout: 0.1        # 注意力Dropout (可选，默认=dropout)
+  feat_dropout: 0.1        # 特征Dropout (可选，默认=dropout)
+
+  # === 注意力配置 ===
+  # 注意力分数计算: e_ij = act(a_src·Wh_i + a_trg·Wh_j)
+  attn_activation: leaky_relu    # 注意力激活: leaky_relu, elu, gelu, relu
+  negative_slope: 0.2            # LeakyReLU负斜率 (仅leaky_relu使用)
+
+  # === 特征融合配置 ===
+  # 每个节点聚合两种来源的信息:
+  #   量测节点: Fusion(agg_mm, agg_ms) - 来自其他量测 + 来自目标
+  #   目标节点: Fusion(agg_ss, agg_sm) - 来自其他目标 + 来自量测
+  fusion_type: concat            # 融合方式: concat, gate, sum
+                                 #   concat: [agg1, agg2] → Linear(2D→D)
+                                 #   gate: g*agg1 + (1-g)*agg2, g可学习
+                                 #   sum: agg1 + agg2 (直接相加)
+  fusion_activation: gelu        # 融合层激活: gelu, silu, relu, tanh
+
+  # === 结构配置 ===
+  use_residual: true             # 是否使用残差连接 (推荐开启)
+  use_layer_norm: true           # 是否使用LayerNorm (推荐开启)
+  layer_norm_eps: 1.0e-6         # LayerNorm epsilon
+  use_bias: false                # 投影是否使用偏置 (GAT通常不用)
+
+  # === 初始化配置 ===
+  init_method: xavier_uniform    # 参数初始化方法
+
+# ============================================================
+# 关联模块配置 (AssociationModule)
+# ============================================================
+association:
+  # === 基本配置 ===
+  embed_dim: 256           # 嵌入维度 (必须与SAM输出一致)
+  hidden_dim: 128          # MLP隐藏层维度
+  head_hidden_dim: 64            # 杂波/新生目标分类头隐藏层维度
+  dropout: 0.1             # Dropout概率
+
+  # === 关联策略配置 ===
+  use_attention_prior: true      # 是否使用MS注意力作为关联先验
+  attn_fusion_method: 'log_odds'  # 可选: 'log_odds', 'standardized'
+  attn_fusion_weight_init: 0.0   # sigmoid后约0.5，表示中等强度
+
+  # === 成对特征配置 ===
+  # 计算量测-目标成对特征用于关联分数
+  # pair_feat = [h_m || h_s || h_m - h_s || h_m ⊙ h_s]
+  pair_feature_type: full        # 成对特征类型，full: [concat, diff, product] → 4D维度，simple: [concat, diff] → 3D维度
+
+  # === 阈值配置 ===
+  birth_count_threshold_init: 15.0  # 新生目标关联量测数初始阈值
+  birth_threshold_sharpness_init: 1.0   # 新生目标sigmoid函数锐度
+  birth_target_confidence: 0.5     # 目标新生置信度阈值
+  death_count_threshold_init: 0.5   # 目标消亡关联量测数初始阈值
+  death_threshold_sharpness_init: 2.0  # sigmoid函数的锐度
+  death_target_confidence: 0.5    # 目标消亡置信度阈值
+
+  # === 初始化配置 ===
+  init_method: xavier_uniform    # 参数初始化方法
+
+# ============================================================
+# Memory模块配置 (MemoryModule)
+# ============================================================
+# 存储目标嵌入历史，管理目标生命周期
+memory:
+  embed_dim: 256           # 嵌入维度
+  max_targets: 50          # 最大同时跟踪目标数
+  max_history_length: 100  # 最大历史长度
+  max_timesteps: 100       # 最大时间步数
+
+# ============================================================
+# TAM模块配置 (TemporalAttentionModule)
+# ============================================================
+tam:
+  # === 基本配置 ===
+  embed_dim: 256           # 输入嵌入维度 (必须与SAM输出一致)
+  output_dim: 5            # 输出状态维度 (与target_dim一致)
+
+  # === Transformer配置 ===
+  num_heads: 8             # 注意力头数
+  num_layers: 2            # Transformer层数
+  ffn_dim: 512             # 前馈网络维度
+  dropout: 0.1             # Dropout率
+
+  # === 时间窗口配置 ===
+  time_window: 10          # 时间窗口大小 (使用最近k步历史)
+
+  # === 位置编码配置 ===
+  position_encoding:
+    type: learnable        # 位置编码类型: learnable, sinusoidal
+    encoding_len: 10       # 编码长度=时间窗口大小
+
+  # === 初始化配置 ===
+  init_method: xavier_uniform
+
+# ============================================================
+# StateEstimation模块配置 (StateEstimationModule)
+# ============================================================
+state_estimation:
+  embed_dim: 256           # 输入嵌入维度
+  output_dim: 5            # 输出状态维度 [x, y, theta, a, b]
+  hidden_dim: 128          # MLP隐藏层维度
+  num_layers: 2            # MLP层数
+  dropout: 0.1             # Dropout率
+
+# ============================================================
+# Loss模块配置 (MGATLoss)
+# ============================================================
+loss:
+  # === 四大损失分量权重 ===
+  # 这四个权重控制关联任务和状态预测任务之间的平衡
+  # 当各项损失量级相近时，均设为1.0即可（等权）
+  # 若某项损失量级显著不同，调整权重使其对总梯度的贡献相当
+  meas_association_weight: 1.0    # w_meas: 量测关联损失权重
+  birth_detection_weight: 1.0     # w_birth: 新生目标检测损失权重
+  death_detection_weight: 1.0     # w_death: 消亡目标检测损失权重
+  state_prediction_weight: 1.0    # w_state: 状态预测损失权重
+
+  # === 量测关联内部GW辅助损失权重 ===
+  # L_meas = L_CE + λ₁·L_GW_known + λ₂·L_GW_birth
+  gw_known_weight: 0.3            # λ₁: 已知状态目标GW损失权重
+  gw_birth_weight: 0.3            # λ₂: 新生目标GW损失权重（从0.1提升至0.5，增强几何约束）
+  gw_min_weight: 0.5              # 目标的最小有效关联权重阈值
+  gw_eps: 1.0e-8                  # 协方差正则化系数 ε_cov（S_P + εI）
+  uniform_cov_scale: 0.25         # 均匀分布协方差修正因子（量测在椭圆内均匀采样）
+
+  # === 状态预测损失权重 ===
+  # L_state = w_gw · L_GW_state
+  gw_state_weight: 1.0            # w_gw: GW距离损失权重
+
+  # === 数值稳定性 ===
+  max_loss_value: 100.0            # 单个损失的最大值上限
+
+  # === Focal Loss与类别加权 ===
+  # Focal Loss: FL = -(1-p_t)^γ · log(p_t)，聚焦困难样本
+  use_focal_loss: true            # 启用Focal Loss
+  focal_gamma: 2.0                # γ=2.0: 简单样本(p_t=0.95)权重缩至0.25%，困难样本(p_t=0.3)保留49%
+
+  # birth_class_weight应≤1.0，避免激励模型对新生目标类过度自信
+  use_class_weight: true          # 启用类别加权
+  clutter_class_weight: 1.0       # 提高杂波分类重要性，抑制杂波→新生目标误分类
+  birth_class_weight: 1.0         # 从2.0降至1.0，避免加剧新生目标类假阳性
