@@ -1,0 +1,22 @@
+# 训练参数
+num_epochs: 11000
+learning_rate: 0.0005
+lr_reduce_factor: 0.2
+lr_reduce_patience: 500
+lr_limit: 0.000001
+weight_decay: 0.0001     # 优化器权重衰减
+save_interval: 50  # 每隔多少epoch保存一次模型
+eval_interval: 1   # 每隔多少epoch评估一次
+
+# 截断BPTT步长
+truncation_steps: 10
+
+# ============================================================
+# Scheduled Sampling 配置
+# ============================================================
+scheduled_sampling:
+  enabled: True              # 是否启用 Scheduled Sampling
+  initial_tf_ratio: 1.0      # 初始 Teacher Forcing 比率（1.0 = 纯TF）
+  final_tf_ratio: 0.0        # 最终 TF 比率（0.0 = 完全使用模型预测）
+  warmup_epochs: 1000           # 纯TF预热轮数（关联模块先收敛）
+  decay_epochs: 10000          # 线性衰减轮数（从initial衰减到final）
